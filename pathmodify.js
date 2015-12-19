@@ -1,5 +1,9 @@
 var
+  path = require('path'),
   rs = require('readable-stream'),
+  ext = require('deep-extend'),
+  rc = require('cli-rc'),
+  // rc = require('rc'),
   plugin,
   slash = {fwd: '/', back: '\\'},
   util = require('util');
@@ -10,6 +14,8 @@ module.exports = plugin = pathmodify;
  * Main plugin.
  */
 function pathmodify (b, opts) {
+  var dfd = require('q').defer();
+
   // Temporarily allow people to continue using this by calling it as a factory
   // function, even though they should be mindful of semver.
   if (! arguments.length) {
@@ -18,31 +24,47 @@ function pathmodify (b, opts) {
       "Deprecated: pathmodify: Don't call the export as a factory. The export is now the plugin function."
     );
   }
-  opts = opts || {};
 
-  opts = {mods: [].concat(opts.mods || [])};
+  rc({
+    path: [process.cwd()],
+    name: '.pathmodifyrc'
+  }, function(err, configs) {
+    if (err) throw err;
+    opts = opts || {};
 
-  // Map resolved pathnames to expose IDs.
-  opts.mappings = {};
+    opts = {mods: [].concat(opts.mods || [])};
 
-  // Record of already processed require() ID's, keyed on parent filename.
-  opts.visited = {};
 
-  opts.bify = b;
+    // Map resolved pathnames to expose IDs.
+    opts.mappings = {};
 
-  opts.expose = function expose (key, val) {
-    b._expose[key] = val;
-    opts.pack.hasExports = true;
-  };
-  // expose
+    // Record of already processed require() ID's, keyed on parent filename.
+    opts.visited = {};
 
-  opts.custom_resolver = make_resolver(opts);
+    if (typeof configs.mods !== 'undefined') {
+      opts = ext(opts, parse_mods(configs));
+    }
 
-  b.on('reset', function () {
+    opts.bify = b;
+
+    opts.expose = function expose (key, val) {
+      b._expose[key] = val;
+      opts.pack.hasExports = true;
+    };
+    // expose
+
+    opts.custom_resolver = make_resolver(opts);
+
+    b.on('reset', function () { init(opts); });
     init(opts);
+    console.log(')))))))))')
+    dfd.resolve();
   });
-  init(opts);
+
+  return dfd;
 }
+
+
 // pathmodify
 
 /**
@@ -295,6 +317,20 @@ function aliaser (opts) {
 function simple (from, to, expose, type) {
   return {from: from, to: to, expose: expose, type: type};
 }
+
+// parses mods from rc config
+
+function parse_mods(config) {
+  return {
+    mods: config.mods.map(function(m) {
+      return plugin.mod[m.type](
+        m.alias,
+        path.join(process.cwd(), m.path)
+      );
+    })
+  };
+}
+
 // simple
 
 // Functions for generating entries in opts.mods.
@@ -319,3 +355,4 @@ plugin.mod = {};
     });
   }
 });
+
